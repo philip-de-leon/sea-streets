@@ -5,17 +5,16 @@ import proj4 from 'proj4'
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN
 
-// --- Projection setup ---
-// WA State Plane North (EPSG:2926) -> WGS84 (lat/lng)
+// ✅ Correct projection (Seattle uses this)
 proj4.defs(
-  'EPSG:2926',
+  'EPSG:2285',
   '+proj=lcc +lat_1=47.5 +lat_2=48.73333333333333 +lat_0=47 +lon_0=-120.8333333333333 +x_0=1640416.666666667 +y_0=0 +datum=NAD83 +units=ft +no_defs'
 )
 
-const fromProjection = 'EPSG:2926'
+const fromProjection = 'EPSG:2285'
 const toProjection = 'EPSG:4326'
 
-// --- Recursive coordinate converter ---
+// ✅ recursive converter
 function convertCoords(coords: any): any {
   if (typeof coords[0] === 'number') {
     return proj4(fromProjection, toProjection, coords)
@@ -32,7 +31,7 @@ export default function App() {
   const [streetsData, setStreetsData] = useState<any[]>([])
   const [mapLoaded, setMapLoaded] = useState(false)
 
-  // --- Load + convert GeoJSON ---
+  // ✅ Load + convert GeoJSON ONCE
   useEffect(() => {
     fetch('/cleaned-seattle-streets.geojson')
       .then(res => res.json())
@@ -46,11 +45,11 @@ export default function App() {
         }))
 
         setStreetsData(converted)
-        console.log('✅ Loaded + converted streets:', converted.length)
+        console.log('✅ Converted features:', converted.length)
       })
   }, [])
 
-  // --- Initialize Map ---
+  // ✅ Initialize map
   useEffect(() => {
     if (map.current || !mapContainer.current) return
 
@@ -70,7 +69,7 @@ export default function App() {
     map.current.on('load', () => {
       const m = map.current!
 
-      // --- Base streets source (EMPTY INIT) ---
+      // ✅ empty source first
       m.addSource('streets', {
         type: 'geojson',
         data: {
@@ -91,7 +90,6 @@ export default function App() {
         },
       })
 
-      // --- Highlight source ---
       m.addSource('streets-highlight', {
         type: 'geojson',
         data: {
@@ -122,7 +120,7 @@ export default function App() {
     }
   }, [])
 
-  // --- Push converted data into map ---
+  // ✅ push converted data into map
   useEffect(() => {
     const m = map.current
     if (!m || !mapLoaded || streetsData.length === 0) return
@@ -135,10 +133,10 @@ export default function App() {
       features: streetsData,
     })
 
-    console.log('📦 Streets data added to map')
+    console.log('📦 Streets added to map')
   }, [streetsData, mapLoaded])
 
-  // --- Update highlight layer ---
+  // ✅ update highlight layer
   useEffect(() => {
     const m = map.current
     if (!m || !mapLoaded) return
@@ -151,10 +149,10 @@ export default function App() {
       features: foundFeatures,
     })
 
-    console.log('🔥 Updating highlights:', foundFeatures.length)
+    console.log('🔥 Highlighting:', foundFeatures.length)
   }, [foundFeatures, mapLoaded])
 
-  // --- Handle input ---
+  // ✅ handle input
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return
 
@@ -188,7 +186,7 @@ export default function App() {
       return
     }
 
-    console.log('✅ Matched:', match.properties.STNAME_ORD)
+    console.log('✅ Found:', match.properties.STNAME_ORD)
 
     setFoundFeatures(prev => [...prev, match])
     setInput('')
@@ -211,7 +209,7 @@ export default function App() {
           color: '#e8eaf0',
         }}
       >
-        <div style={{ fontSize: 11, color: '#7a7d8a', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+        <div style={{ fontSize: 11, color: '#7a7d8a', textTransform: 'uppercase' }}>
           Type a street name
         </div>
 
@@ -220,17 +218,12 @@ export default function App() {
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="e.g. PIKE ST"
-          autoComplete="off"
-          spellCheck={false}
           style={{
             padding: '10px 12px',
             background: '#0f1117',
             border: '1px solid #2a2d3a',
             borderRadius: 6,
             color: '#e8eaf0',
-            fontFamily: 'monospace',
-            fontSize: 14,
-            outline: 'none',
           }}
         />
 
@@ -238,7 +231,7 @@ export default function App() {
           {foundFeatures.length} found
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ flex: 1, overflowY: 'auto' }}>
           {foundFeatures.map(f => (
             <div
               key={f.properties.STNAME_ORD}
@@ -246,8 +239,8 @@ export default function App() {
                 fontSize: 12,
                 padding: '5px 8px',
                 background: '#1e2230',
-                borderRadius: 4,
                 borderLeft: '2px solid #ff0000',
+                marginBottom: 4,
               }}
             >
               {f.properties.STNAME_ORD}
