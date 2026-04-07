@@ -5,19 +5,16 @@ import proj4 from 'proj4'
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN
 
-// ✅ Correct projection (Seattle uses this)
+// ✅ Define Seattle projection (WA North State Plane - feet)
 proj4.defs(
-  'EPSG:2285',
-  '+proj=lcc +lat_1=47.5 +lat_2=48.73333333333333 +lat_0=47 +lon_0=-120.8333333333333 +x_0=1640416.666666667 +y_0=0 +datum=NAD83 +units=ft +no_defs'
+  "EPSG:2926",
+  "+proj=lcc +lat_1=48.73333333333333 +lat_2=47.5 +lat_0=47 +lon_0=-120.8333333333333 +x_0=500000 +y_0=0 +datum=NAD83 +units=ft +no_defs"
 )
 
-const fromProjection = 'EPSG:2285'
-const toProjection = 'EPSG:4326'
-
-// ✅ recursive converter
+// 🔁 Convert coordinates recursively
 function convertCoords(coords: any): any {
   if (typeof coords[0] === 'number') {
-    return proj4(fromProjection, toProjection, coords)
+    return proj4("EPSG:2926", "EPSG:4326", coords)
   }
   return coords.map(convertCoords)
 }
@@ -31,25 +28,26 @@ export default function App() {
   const [streetsData, setStreetsData] = useState<any[]>([])
   const [mapLoaded, setMapLoaded] = useState(false)
 
-  // ✅ Load + convert GeoJSON ONCE
+  // ✅ Load + CONVERT GeoJSON ONCE
   useEffect(() => {
     fetch('/cleaned-seattle-streets.geojson')
       .then(res => res.json())
       .then(data => {
-        const converted = data.features.map((feature: any) => ({
-          ...feature,
+        const converted = data.features.map((f: any) => ({
+          type: 'Feature',
+          properties: f.properties,
           geometry: {
-            ...feature.geometry,
-            coordinates: convertCoords(feature.geometry.coordinates),
+            type: f.geometry.type,
+            coordinates: convertCoords(f.geometry.coordinates),
           },
         }))
 
         setStreetsData(converted)
-        console.log('✅ Converted features:', converted.length)
+        console.log('✅ Streets loaded & converted:', converted.length)
       })
   }, [])
 
-  // ✅ Initialize map
+  // Initialize map
   useEffect(() => {
     if (map.current || !mapContainer.current) return
 
@@ -69,13 +67,10 @@ export default function App() {
     map.current.on('load', () => {
       const m = map.current!
 
-      // ✅ empty source first
+      // Base streets (still raw file — just visual context)
       m.addSource('streets', {
         type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: [],
-        },
+        data: '/cleaned-seattle-streets.geojson',
       })
 
       m.addLayer({
@@ -90,6 +85,7 @@ export default function App() {
         },
       })
 
+      // Highlight source (uses converted data)
       m.addSource('streets-highlight', {
         type: 'geojson',
         data: {
@@ -98,20 +94,22 @@ export default function App() {
         },
       })
 
-      m.addLayer({
-        id: 'streets-highlight-layer',
-        type: 'line',
-        source: 'streets-highlight',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': '#ff0000',
-          'line-width': ['interpolate', ['linear'], ['zoom'], 11, 4, 14, 6, 16, 8],
-          'line-opacity': 1,
+      m.addLayer(
+        {
+          id: 'streets-highlight-layer',
+          type: 'line',
+          source: 'streets-highlight',
+          layout: { 'line-join': 'round', 'line-cap': 'round' },
+          paint: {
+            'line-color': '#ff4d4d',
+            'line-width': 6,
+            'line-opacity': 1,
+          },
         },
-      })
+        'streets-base'
+      )
 
       setMapLoaded(true)
-      console.log('🗺️ Map loaded')
     })
 
     return () => {
@@ -120,26 +118,11 @@ export default function App() {
     }
   }, [])
 
-  // ✅ push converted data into map
-  useEffect(() => {
-    const m = map.current
-    if (!m || !mapLoaded || streetsData.length === 0) return
-
-    const source = m.getSource('streets') as mapboxgl.GeoJSONSource
-    if (!source) return
-
-    source.setData({
-      type: 'FeatureCollection',
-      features: streetsData,
-    })
-
-    console.log('📦 Streets added to map')
-  }, [streetsData, mapLoaded])
-
-  // ✅ update highlight layer
+  // Update highlight layer
   useEffect(() => {
     const m = map.current
     if (!m || !mapLoaded) return
+    if (!m.isStyleLoaded()) return
 
     const source = m.getSource('streets-highlight') as mapboxgl.GeoJSONSource
     if (!source) return
@@ -148,29 +131,32 @@ export default function App() {
       type: 'FeatureCollection',
       features: foundFeatures,
     })
-
-    console.log('🔥 Highlighting:', foundFeatures.length)
   }, [foundFeatures, mapLoaded])
 
-  // ✅ handle input
+  // Handle input
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return
 
     const name = input.trim().toUpperCase()
     if (!name) return
 
+    const normalizedInput = name.replace(/\s+/g, '')
+
+    // Prevent duplicates
     if (
-      foundFeatures.some(
-        f => f.properties.STNAME_ORD.toUpperCase() === name
+      foundFeatures.some(f =>
+        f.properties.STNAME_ORD
+          .toUpperCase()
+          .replace(/\s+/g, '')
+          .includes(normalizedInput)
       )
     ) {
       setInput('')
       return
     }
 
-    const normalizedInput = name.replace(/\s+/g, '')
-
-    const match = streetsData.find(
+    // Match ALL segments
+    const matches = streetsData.filter(
       f =>
         f.properties &&
         typeof f.properties.STNAME_ORD === 'string' &&
@@ -180,21 +166,21 @@ export default function App() {
           .includes(normalizedInput)
     )
 
-    if (!match) {
+    if (matches.length === 0) {
       console.log('❌ No match for:', name)
       setInput('')
       return
     }
 
-    console.log('✅ Found:', match.properties.STNAME_ORD)
+    console.log('✅ Highlighting:', matches.length, 'segments')
 
-    setFoundFeatures(prev => [...prev, match])
+    setFoundFeatures(prev => [...prev, ...matches])
     setInput('')
   }
 
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw' }}>
-      <div ref={mapContainer} style={{ flex: 1, height: '100%' }} />
+      <div ref={mapContainer} style={{ flex: 1 }} />
 
       <div
         style={{
@@ -228,24 +214,7 @@ export default function App() {
         />
 
         <div style={{ fontSize: 12, color: '#7a7d8a' }}>
-          {foundFeatures.length} found
-        </div>
-
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {foundFeatures.map(f => (
-            <div
-              key={f.properties.STNAME_ORD}
-              style={{
-                fontSize: 12,
-                padding: '5px 8px',
-                background: '#1e2230',
-                borderLeft: '2px solid #ff0000',
-                marginBottom: 4,
-              }}
-            >
-              {f.properties.STNAME_ORD}
-            </div>
-          ))}
+          {foundFeatures.length} segments found
         </div>
       </div>
     </div>
