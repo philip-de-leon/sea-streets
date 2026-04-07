@@ -11,7 +11,7 @@ export default function App() {
   const [found, setFound] = useState<string[]>([])
   const [streetsData, setStreetsData] = useState<any[]>([]) // full GeoJSON features
 
-  // Load GeoJSON once into state
+  // Load GeoJSON
   useEffect(() => {
     fetch('/cleaned-seattle-streets.geojson')
       .then(res => res.json())
@@ -61,7 +61,7 @@ export default function App() {
         },
       })
 
-      // Highlight layer
+      // Highlight layer (bright red for visibility)
       m.addLayer({
         id: 'streets-found',
         type: 'line',
@@ -69,8 +69,8 @@ export default function App() {
         filter: ['in', ['get', 'STNAME_ORD'], ['literal', []]],
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
-          'line-color': '#4fc3f7',
-          'line-width': ['interpolate', ['linear'], ['zoom'], 11, 2, 14, 4, 16, 5],
+          'line-color': '#ff0000', // bright red
+          'line-width': ['interpolate', ['linear'], ['zoom'], 11, 4, 14, 6, 16, 8],
           'line-opacity': 1,
         },
       })
@@ -82,7 +82,7 @@ export default function App() {
     }
   }, [])
 
-  // Update map highlight whenever found streets change
+  // Update highlight whenever found streets change
   useEffect(() => {
     const m = map.current
     if (!m || !m.getLayer('streets-found')) return
@@ -96,17 +96,21 @@ export default function App() {
     ])
   }, [found])
 
-  // Handle user input
+  // Handle input
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return
 
     const name = input.trim().toUpperCase()
-    if (!name || found.includes(name)) {
+    if (!name) return
+
+    // Check for duplicates
+    if (found.includes(name)) {
+      console.log('Already found:', name)
       setInput('')
       return
     }
 
-    // Find a matching street from the full GeoJSON
+    // Find street from GeoJSON
     const match = streetsData.find(
       f =>
         f.properties &&
@@ -176,7 +180,7 @@ export default function App() {
               padding: '5px 8px',
               background: '#1e2230',
               borderRadius: 4,
-              borderLeft: '2px solid #4fc3f7',
+              borderLeft: '2px solid #ff0000', // matches highlight color
             }}>
               {name}
             </div>
