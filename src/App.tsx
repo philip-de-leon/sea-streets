@@ -8,10 +8,10 @@ export default function App() {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<mapboxgl.Map | null>(null)
   const [input, setInput] = useState('')
-  const [found, setFound] = useState<string[]>([])
-  const [streetsData, setStreetsData] = useState<any[]>([]) // full GeoJSON features
+  const [foundFeatures, setFoundFeatures] = useState<any[]>([]) // features to highlight
+  const [streetsData, setStreetsData] = useState<any[]>([]) // all GeoJSON features
 
-  // Load GeoJSON
+  // Load GeoJSON streets into memory
   useEffect(() => {
     fetch('/cleaned-seattle-streets.geojson')
       .then(res => res.json())
@@ -22,7 +22,7 @@ export default function App() {
       })
   }, [])
 
-  // Initialize map
+  // Initialize Map
   useEffect(() => {
     if (map.current || !mapContainer.current) return
 
@@ -42,13 +42,12 @@ export default function App() {
     map.current.on('load', () => {
       const m = map.current!
 
-      // Add streets source
+      // Base streets layer
       m.addSource('streets', {
         type: 'geojson',
         data: '/cleaned-seattle-streets.geojson',
       })
 
-      // Base layer
       m.addLayer({
         id: 'streets-base',
         type: 'line',
@@ -61,12 +60,16 @@ export default function App() {
         },
       })
 
-      // Highlight layer (bright red for visibility)
+      // Highlight layer — separate source
+      m.addSource('streets-highlight', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      })
+
       m.addLayer({
-        id: 'streets-found',
+        id: 'streets-highlight-layer',
         type: 'line',
-        source: 'streets',
-        filter: ['in', ['get', 'STNAME_ORD'], ['literal', []]],
+        source: 'streets-highlight',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
           'line-color': '#ff0000', // bright red
@@ -82,19 +85,18 @@ export default function App() {
     }
   }, [])
 
-  // Update highlight whenever found streets change
+  // Update highlight layer whenever foundFeatures changes
   useEffect(() => {
     const m = map.current
-    if (!m || !m.getLayer('streets-found')) return
+    if (!m || !m.getSource('streets-highlight')) return
 
-    console.log('Highlighting streets:', found)
+    console.log('Highlighting features:', foundFeatures.map(f => f.properties?.STNAME_ORD))
 
-    m.setFilter('streets-found', [
-      'in',
-      ['get', 'STNAME_ORD'],
-      ['literal', found],
-    ])
-  }, [found])
+    ;(m.getSource('streets-highlight') as mapboxgl.GeoJSONSource).setData({
+      type: 'FeatureCollection',
+      features: foundFeatures,
+    })
+  }, [foundFeatures])
 
   // Handle input
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -103,14 +105,14 @@ export default function App() {
     const name = input.trim().toUpperCase()
     if (!name) return
 
-    // Check for duplicates
-    if (found.includes(name)) {
+    // Avoid duplicates
+    if (foundFeatures.some(f => f.properties.STNAME_ORD.toUpperCase() === name)) {
       console.log('Already found:', name)
       setInput('')
       return
     }
 
-    // Find street from GeoJSON
+    // Match street from GeoJSON
     const match = streetsData.find(
       f =>
         f.properties &&
@@ -124,10 +126,8 @@ export default function App() {
       return
     }
 
-    const realName = match.properties.STNAME_ORD
-    console.log('✅ Matched:', realName)
-
-    setFound(prev => [...prev, realName])
+    console.log('✅ Matched:', match.properties.STNAME_ORD)
+    setFoundFeatures(prev => [...prev, match])
     setInput('')
   }
 
@@ -170,19 +170,19 @@ export default function App() {
         />
 
         <div style={{ fontSize: 12, color: '#7a7d8a' }}>
-          {found.length} found
+          {foundFeatures.length} found
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {found.map(name => (
-            <div key={name} style={{
+          {foundFeatures.map(f => (
+            <div key={f.properties.STNAME_ORD} style={{
               fontSize: 12,
               padding: '5px 8px',
               background: '#1e2230',
               borderRadius: 4,
-              borderLeft: '2px solid #ff0000', // matches highlight color
+              borderLeft: '2px solid #ff0000',
             }}>
-              {name}
+              {f.properties.STNAME_ORD}
             </div>
           ))}
         </div>
