@@ -74,7 +74,18 @@ export default function App() {
   useEffect(() => {
     const m = map.current
     if (!m || !m.getLayer('streets-found')) return
-    m.setFilter('streets-found', ['in', ['get', 'STNAME_ORD'], ['literal', found]])
+  
+    console.log('Applying filter with:', found)
+  
+    m.setFilter('streets-found', [
+      'in',
+      ['get', 'STNAME_ORD'],
+      ['literal', found],
+    ])
+  
+    // 👇 DEBUG: check what the map thinks matches
+    const visible = m.queryRenderedFeatures({ layers: ['streets-found'] })
+    console.log('Highlighted features count:', visible.length)
   }, [found])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
