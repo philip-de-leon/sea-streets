@@ -7,9 +7,11 @@ mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN
 export default function App() {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<mapboxgl.Map | null>(null)
+
   const [input, setInput] = useState('')
-  const [foundFeatures, setFoundFeatures] = useState<any[]>([]) // features to highlight
-  const [streetsData, setStreetsData] = useState<any[]>([]) // all GeoJSON features
+  const [foundFeatures, setFoundFeatures] = useState<any[]>([])
+  const [streetsData, setStreetsData] = useState<any[]>([])
+  const [mapLoaded, setMapLoaded] = useState(false) // ✅ NEW
 
   // Load GeoJSON streets into memory
   useEffect(() => {
@@ -18,7 +20,6 @@ export default function App() {
       .then(data => {
         setStreetsData(data.features)
         console.log('Loaded streets:', data.features.length)
-        console.log('Sample streets:', data.features.slice(0, 20).map(f => f.properties?.STNAME_ORD))
       })
   }, [])
 
@@ -42,7 +43,7 @@ export default function App() {
     map.current.on('load', () => {
       const m = map.current!
 
-      // Base streets layer
+      // Base streets
       m.addSource('streets', {
         type: 'geojson',
         data: '/cleaned-seattle-streets.geojson',
@@ -60,10 +61,13 @@ export default function App() {
         },
       })
 
-      // Highlight layer — separate source
+      // Highlight source
       m.addSource('streets-highlight', {
         type: 'geojson',
-        data: { type: 'FeatureCollection', features: [] },
+        data: {
+          type: 'FeatureCollection',
+          features: [],
+        },
       })
 
       m.addLayer({
@@ -72,11 +76,14 @@ export default function App() {
         source: 'streets-highlight',
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
-          'line-color': '#ff0000', // bright red
+          'line-color': '#ff0000',
           'line-width': ['interpolate', ['linear'], ['zoom'], 11, 4, 14, 6, 16, 8],
           'line-opacity': 1,
         },
       })
+
+      setMapLoaded(true) // ✅ IMPORTANT
+      console.log('Map fully loaded')
     })
 
     return () => {
@@ -85,19 +92,26 @@ export default function App() {
     }
   }, [])
 
-  // Update highlight layer whenever foundFeatures changes
+  // Update highlight layer
   useEffect(() => {
     const m = map.current
-    if (!m || !m.getSource('streets-highlight')) return
+    if (!m || !mapLoaded) return // ✅ wait for map
 
-    console.log('Highlighting features:', foundFeatures.map(f => f.properties?.STNAME_ORD))
-    console.log('Source exists?', !!m.getSource('streets-highlight'))
+    if (!m.isStyleLoaded()) return // ✅ extra safety
 
-    ;(m.getSource('streets-highlight') as mapboxgl.GeoJSONSource).setData({
+    const source = m.getSource('streets-highlight') as mapboxgl.GeoJSONSource
+    if (!source) {
+      console.log('❌ highlight source missing')
+      return
+    }
+
+    console.log('🔥 Updating highlights:', foundFeatures.length)
+
+    source.setData({
       type: 'FeatureCollection',
       features: foundFeatures,
     })
-  }, [foundFeatures])
+  }, [foundFeatures, mapLoaded])
 
   // Handle input
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -106,19 +120,27 @@ export default function App() {
     const name = input.trim().toUpperCase()
     if (!name) return
 
-    // Avoid duplicates
-    if (foundFeatures.some(f => f.properties.STNAME_ORD.toUpperCase() === name)) {
+    // Prevent duplicates
+    if (
+      foundFeatures.some(
+        f => f.properties.STNAME_ORD.toUpperCase() === name
+      )
+    ) {
       console.log('Already found:', name)
       setInput('')
       return
     }
 
-    // Match street from GeoJSON
+    const normalizedInput = name.replace(/\s+/g, '')
+
     const match = streetsData.find(
       f =>
         f.properties &&
         typeof f.properties.STNAME_ORD === 'string' &&
-        f.properties.STNAME_ORD.toUpperCase().replace(/\s+/g, '').includes(name.replace(/\s+/g, ''))
+        f.properties.STNAME_ORD
+          .toUpperCase()
+          .replace(/\s+/g, '')
+          .includes(normalizedInput)
     )
 
     if (!match || !match.properties) {
@@ -128,6 +150,7 @@ export default function App() {
     }
 
     console.log('✅ Matched:', match.properties.STNAME_ORD)
+
     setFoundFeatures(prev => [...prev, match])
     setInput('')
   }
@@ -136,18 +159,27 @@ export default function App() {
     <div style={{ display: 'flex', height: '100vh', width: '100vw' }}>
       <div ref={mapContainer} style={{ flex: 1, height: '100%' }} />
 
-      <div style={{
-        width: 280,
-        background: '#1a1d27',
-        borderLeft: '1px solid #2a2d3a',
-        padding: 16,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 12,
-        fontFamily: 'monospace',
-        color: '#e8eaf0',
-      }}>
-        <div style={{ fontSize: 11, color: '#7a7d8a', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+      <div
+        style={{
+          width: 280,
+          background: '#1a1d27',
+          borderLeft: '1px solid #2a2d3a',
+          padding: 16,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          fontFamily: 'monospace',
+          color: '#e8eaf0',
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11,
+            color: '#7a7d8a',
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+          }}
+        >
           Type a street name
         </div>
 
@@ -174,15 +206,26 @@ export default function App() {
           {foundFeatures.length} found
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+          }}
+        >
           {foundFeatures.map(f => (
-            <div key={f.properties.STNAME_ORD} style={{
-              fontSize: 12,
-              padding: '5px 8px',
-              background: '#1e2230',
-              borderRadius: 4,
-              borderLeft: '2px solid #ff0000',
-            }}>
+            <div
+              key={f.properties.STNAME_ORD}
+              style={{
+                fontSize: 12,
+                padding: '5px 8px',
+                background: '#1e2230',
+                borderRadius: 4,
+                borderLeft: '2px solid #ff0000',
+              }}
+            >
               {f.properties.STNAME_ORD}
             </div>
           ))}
