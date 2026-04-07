@@ -79,9 +79,24 @@ export default function App() {
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return
+  
     const name = input.trim()
-    if (!name || found.includes(name)) return
-    setFound(prev => [...prev, name])
+  
+    console.log('Entered:', name)
+    console.log('Current found list:', found)
+  
+    if (!name) return
+    if (found.includes(name)) {
+      console.log('Already found:', name)
+      return
+    }
+  
+    setFound(prev => {
+      const updated = [...prev, name]
+      console.log('Updated found list:', updated)
+      return updated
+    })
+  
     setInput('')
   }
 
