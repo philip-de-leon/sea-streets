@@ -203,7 +203,7 @@ export default function App() {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="e.g. PIKE ST"
+          placeholder="e.g. Broadway"
           style={{
             padding: '10px 12px',
             background: '#0f1117',
