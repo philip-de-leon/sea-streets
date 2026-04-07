@@ -1,8 +1,27 @@
 import { useEffect, useRef, useState } from 'react'
 import mapboxgl from 'mapbox-gl'
 import React from 'react'
+import proj4 from 'proj4'
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN
+
+// --- Projection setup ---
+// WA State Plane North (EPSG:2926) -> WGS84 (lat/lng)
+proj4.defs(
+  'EPSG:2926',
+  '+proj=lcc +lat_1=47.5 +lat_2=48.73333333333333 +lat_0=47 +lon_0=-120.8333333333333 +x_0=1640416.666666667 +y_0=0 +datum=NAD83 +units=ft +no_defs'
+)
+
+const fromProjection = 'EPSG:2926'
+const toProjection = 'EPSG:4326'
+
+// --- Recursive coordinate converter ---
+function convertCoords(coords: any): any {
+  if (typeof coords[0] === 'number') {
+    return proj4(fromProjection, toProjection, coords)
+  }
+  return coords.map(convertCoords)
+}
 
 export default function App() {
   const mapContainer = useRef<HTMLDivElement>(null)
@@ -11,19 +30,27 @@ export default function App() {
   const [input, setInput] = useState('')
   const [foundFeatures, setFoundFeatures] = useState<any[]>([])
   const [streetsData, setStreetsData] = useState<any[]>([])
-  const [mapLoaded, setMapLoaded] = useState(false) // ✅ NEW
+  const [mapLoaded, setMapLoaded] = useState(false)
 
-  // Load GeoJSON streets into memory
+  // --- Load + convert GeoJSON ---
   useEffect(() => {
     fetch('/cleaned-seattle-streets.geojson')
       .then(res => res.json())
       .then(data => {
-        setStreetsData(data.features)
-        console.log('Loaded streets:', data.features.length)
+        const converted = data.features.map((feature: any) => ({
+          ...feature,
+          geometry: {
+            ...feature.geometry,
+            coordinates: convertCoords(feature.geometry.coordinates),
+          },
+        }))
+
+        setStreetsData(converted)
+        console.log('✅ Loaded + converted streets:', converted.length)
       })
   }, [])
 
-  // Initialize Map
+  // --- Initialize Map ---
   useEffect(() => {
     if (map.current || !mapContainer.current) return
 
@@ -43,10 +70,13 @@ export default function App() {
     map.current.on('load', () => {
       const m = map.current!
 
-      // Base streets
+      // --- Base streets source (EMPTY INIT) ---
       m.addSource('streets', {
         type: 'geojson',
-        data: '/cleaned-seattle-streets.geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: [],
+        },
       })
 
       m.addLayer({
@@ -61,7 +91,7 @@ export default function App() {
         },
       })
 
-      // Highlight source
+      // --- Highlight source ---
       m.addSource('streets-highlight', {
         type: 'geojson',
         data: {
@@ -82,8 +112,8 @@ export default function App() {
         },
       })
 
-      setMapLoaded(true) // ✅ IMPORTANT
-      console.log('Map fully loaded')
+      setMapLoaded(true)
+      console.log('🗺️ Map loaded')
     })
 
     return () => {
@@ -92,41 +122,50 @@ export default function App() {
     }
   }, [])
 
-  // Update highlight layer
+  // --- Push converted data into map ---
   useEffect(() => {
     const m = map.current
-    if (!m || !mapLoaded) return // ✅ wait for map
+    if (!m || !mapLoaded || streetsData.length === 0) return
 
-    if (!m.isStyleLoaded()) return // ✅ extra safety
+    const source = m.getSource('streets') as mapboxgl.GeoJSONSource
+    if (!source) return
+
+    source.setData({
+      type: 'FeatureCollection',
+      features: streetsData,
+    })
+
+    console.log('📦 Streets data added to map')
+  }, [streetsData, mapLoaded])
+
+  // --- Update highlight layer ---
+  useEffect(() => {
+    const m = map.current
+    if (!m || !mapLoaded) return
 
     const source = m.getSource('streets-highlight') as mapboxgl.GeoJSONSource
-    if (!source) {
-      console.log('❌ highlight source missing')
-      return
-    }
-
-    console.log('🔥 Updating highlights:', foundFeatures.length)
+    if (!source) return
 
     source.setData({
       type: 'FeatureCollection',
       features: foundFeatures,
     })
+
+    console.log('🔥 Updating highlights:', foundFeatures.length)
   }, [foundFeatures, mapLoaded])
 
-  // Handle input
+  // --- Handle input ---
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return
 
     const name = input.trim().toUpperCase()
     if (!name) return
 
-    // Prevent duplicates
     if (
       foundFeatures.some(
         f => f.properties.STNAME_ORD.toUpperCase() === name
       )
     ) {
-      console.log('Already found:', name)
       setInput('')
       return
     }
@@ -143,7 +182,7 @@ export default function App() {
           .includes(normalizedInput)
     )
 
-    if (!match || !match.properties) {
+    if (!match) {
       console.log('❌ No match for:', name)
       setInput('')
       return
@@ -172,14 +211,7 @@ export default function App() {
           color: '#e8eaf0',
         }}
       >
-        <div
-          style={{
-            fontSize: 11,
-            color: '#7a7d8a',
-            letterSpacing: '0.1em',
-            textTransform: 'uppercase',
-          }}
-        >
+        <div style={{ fontSize: 11, color: '#7a7d8a', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
           Type a street name
         </div>
 
@@ -206,15 +238,7 @@ export default function App() {
           {foundFeatures.length} found
         </div>
 
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-          }}
-        >
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {foundFeatures.map(f => (
             <div
               key={f.properties.STNAME_ORD}
