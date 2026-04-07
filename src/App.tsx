@@ -91,6 +91,7 @@ export default function App() {
     if (!m || !m.getSource('streets-highlight')) return
 
     console.log('Highlighting features:', foundFeatures.map(f => f.properties?.STNAME_ORD))
+    console.log('Source exists?', !!m.getSource('streets-highlight'))
 
     ;(m.getSource('streets-highlight') as mapboxgl.GeoJSONSource).setData({
       type: 'FeatureCollection',
