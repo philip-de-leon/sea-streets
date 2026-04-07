@@ -212,9 +212,34 @@ export default function App() {
             color: '#e8eaf0',
           }}
         />
-
+        
         <div style={{ fontSize: 12, color: '#7a7d8a' }}>
-          {foundFeatures.length} segments found
+          {foundFeatures.length} found
+        </div>
+
+        <div
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+          }}
+        >
+          {foundFeatures.map(f => (
+            <div
+              key={f.properties.STNAME_ORD}
+              style={{
+                fontSize: 12,
+                padding: '5px 8px',
+                background: '#1e2230',
+                borderRadius: 4,
+                borderLeft: '2px solid #ff0000',
+              }}
+            >
+              {f.properties.STNAME_ORD}
+            </div>
+          ))}
         </div>
       </div>
     </div>
