@@ -30,13 +30,13 @@ export default function App() {
     map.current.on('load', () => {
       const m = map.current!
 
-      // Load streets from GeoJSON in public/
+      // Load streets from GeoJSON
       m.addSource('streets', {
         type: 'geojson',
         data: '/cleaned-seattle-streets.geojson',
       })
 
-      // All streets — muted base
+      // Base layer (muted)
       m.addLayer({
         id: 'streets-base',
         type: 'line',
@@ -49,7 +49,7 @@ export default function App() {
         },
       })
 
-      // Found streets — bright highlight, starts empty
+      // Highlight layer (found streets)
       m.addLayer({
         id: 'streets-found',
         type: 'line',
@@ -57,11 +57,19 @@ export default function App() {
         filter: ['in', ['get', 'STNAME_ORD'], ['literal', []]],
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
-          'line-color': '#4fc3f7',
+          'line-color': '#4fc3f7', // bright cyan
           'line-width': ['interpolate', ['linear'], ['zoom'], 11, 2, 14, 4, 16, 5],
           'line-opacity': 1,
         },
       })
+
+      // 👇 Optional: inspect some street names for debugging
+      fetch('/cleaned-seattle-streets.geojson')
+        .then(res => res.json())
+        .then(data => {
+          const names = data.features.map(f => f.properties.STNAME_ORD)
+          console.log('Sample street names:', names.slice(0, 20))
+        })
     })
 
     return () => {
@@ -70,44 +78,56 @@ export default function App() {
     }
   }, [])
 
-  // Update highlight filter whenever found list changes
+  // Update highlight filter whenever 'found' changes
   useEffect(() => {
     const m = map.current
     if (!m || !m.getLayer('streets-found')) return
-  
-    console.log('Applying filter with:', found)
-  
+
+    console.log('Updating map filter with found streets:', found)
+
     m.setFilter('streets-found', [
       'in',
       ['get', 'STNAME_ORD'],
       ['literal', found],
     ])
-  
-    // 👇 DEBUG: check what the map thinks matches
+
     const visible = m.queryRenderedFeatures({ layers: ['streets-found'] })
-    console.log('Highlighted features count:', visible.length)
+    console.log('Number of features highlighted:', visible.length)
   }, [found])
 
+  // Handle input
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== 'Enter') return
   
-    const name = input.trim()
+    const name = input.trim().toUpperCase()
+    const m = map.current
   
     console.log('Entered:', name)
-    console.log('Current found list:', found)
   
-    if (!name) return
+    if (!name || !m) return
     if (found.includes(name)) {
       console.log('Already found:', name)
       return
     }
   
-    setFound(prev => {
-      const updated = [...prev, name]
-      console.log('Updated found list:', updated)
-      return updated
-    })
+    // Query source features
+    const features = m.querySourceFeatures('streets')
   
+    // Find a feature that has properties and a STNAME_ORD
+    const match = features.find(
+      (f) => f.properties && typeof f.properties.STNAME_ORD === 'string' && f.properties.STNAME_ORD.includes(name)
+    )
+  
+    if (!match || !match.properties) {
+      console.log('❌ No match for:', name)
+      setInput('')
+      return
+    }
+  
+    const realName = match.properties.STNAME_ORD
+    console.log('✅ Matched:', realName)
+  
+    setFound(prev => [...prev, realName])
     setInput('')
   }
 
@@ -116,7 +136,7 @@ export default function App() {
       {/* Map */}
       <div ref={mapContainer} style={{ flex: 1, height: '100%' }} />
 
-      {/* Minimal sidebar */}
+      {/* Sidebar */}
       <div style={{
         width: 280,
         background: '#1a1d27',
@@ -155,7 +175,6 @@ export default function App() {
           {found.length} found
         </div>
 
-        {/* Found list */}
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {found.map(name => (
             <div key={name} style={{
