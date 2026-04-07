@@ -24,7 +24,9 @@ export default function App() {
   const map = useRef<mapboxgl.Map | null>(null)
 
   const [input, setInput] = useState('')
-  const [foundFeatures, setFoundFeatures] = useState<any[]>([])
+  const [foundFeatures, setFoundFeatures] = useState<
+    { name: string; segments: any[]; count: number }[]
+  >([])
   const [streetsData, setStreetsData] = useState<any[]>([])
   const [mapLoaded, setMapLoaded] = useState(false)
 
@@ -41,7 +43,6 @@ export default function App() {
             coordinates: convertCoords(f.geometry.coordinates),
           },
         }))
-
         setStreetsData(converted)
         console.log('✅ Streets loaded & converted:', converted.length)
       })
@@ -67,7 +68,6 @@ export default function App() {
     map.current.on('load', () => {
       const m = map.current!
 
-      // Base streets (still raw file — just visual context)
       m.addSource('streets', {
         type: 'geojson',
         data: '/cleaned-seattle-streets.geojson',
@@ -85,7 +85,6 @@ export default function App() {
         },
       })
 
-      // Highlight source (uses converted data)
       m.addSource('streets-highlight', {
         type: 'geojson',
         data: {
@@ -127,9 +126,12 @@ export default function App() {
     const source = m.getSource('streets-highlight') as mapboxgl.GeoJSONSource
     if (!source) return
 
+    // Flatten all segments from foundFeatures for highlighting
+    const allSegments = foundFeatures.flatMap(f => f.segments)
+
     source.setData({
       type: 'FeatureCollection',
-      features: foundFeatures,
+      features: allSegments,
     })
   }, [foundFeatures, mapLoaded])
 
@@ -139,31 +141,14 @@ export default function App() {
 
     const name = input.trim().toUpperCase()
     if (!name) return
-
     const normalizedInput = name.replace(/\s+/g, '')
-
-    // Prevent duplicates
-    if (
-      foundFeatures.some(f =>
-        f.properties.STNAME_ORD
-          .toUpperCase()
-          .replace(/\s+/g, '')
-          .includes(normalizedInput)
-      )
-    ) {
-      setInput('')
-      return
-    }
 
     // Match ALL segments
     const matches = streetsData.filter(
       f =>
         f.properties &&
         typeof f.properties.STNAME_ORD === 'string' &&
-        f.properties.STNAME_ORD
-          .toUpperCase()
-          .replace(/\s+/g, '')
-          .includes(normalizedInput)
+        f.properties.STNAME_ORD.toUpperCase().replace(/\s+/g, '').includes(normalizedInput)
     )
 
     if (matches.length === 0) {
@@ -174,7 +159,28 @@ export default function App() {
 
     console.log('✅ Highlighting:', matches.length, 'segments')
 
-    setFoundFeatures(prev => [...prev, ...matches])
+    // Group by street name
+    const streetMap = new Map<string, any[]>()
+    matches.forEach(f => {
+      const streetName = f.properties.STNAME_ORD
+      if (!streetMap.has(streetName)) streetMap.set(streetName, [])
+      streetMap.get(streetName)!.push(f)
+    })
+
+    const newFound = Array.from(streetMap.entries()).map(([name, segments]) => ({
+      name,
+      segments,
+      count: segments.length,
+    }))
+
+    // Merge with previous, keeping uniqueness
+    setFoundFeatures(prev => {
+      const combined = [...prev, ...newFound]
+      const unique = new Map<string, typeof combined[0]>()
+      combined.forEach(f => unique.set(f.name, f))
+      return Array.from(unique.values())
+    })
+
     setInput('')
   }
 
@@ -212,9 +218,9 @@ export default function App() {
             color: '#e8eaf0',
           }}
         />
-        
+
         <div style={{ fontSize: 12, color: '#7a7d8a' }}>
-          {foundFeatures.length} found
+          {foundFeatures.length} street{foundFeatures.length !== 1 ? 's' : ''} found
         </div>
 
         <div
@@ -228,7 +234,7 @@ export default function App() {
         >
           {foundFeatures.map(f => (
             <div
-              key={f.properties.STNAME_ORD}
+              key={f.name}
               style={{
                 fontSize: 12,
                 padding: '5px 8px',
@@ -237,7 +243,7 @@ export default function App() {
                 borderLeft: '2px solid #ff0000',
               }}
             >
-              {f.properties.STNAME_ORD}
+              {f.name} {f.count > 1 ? `(${f.count} segments)` : ''}
             </div>
           ))}
         </div>
